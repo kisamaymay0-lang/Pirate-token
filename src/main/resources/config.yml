@@ -1,0 +1,10 @@
+# Probability per chest inventory opening. 0.001 = 0.1%.
+drop-chance: 0.001
+debug: false
+title-enabled: true
+sound-enabled: true
+particle-enabled: true
+glow-radius: 30
+glow-duration-ticks: 30
+remove-chest-for-others: true
+token-name: "🏴‍☠️ Pirate Shop Access"

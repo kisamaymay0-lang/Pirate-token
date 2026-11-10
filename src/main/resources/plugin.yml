@@ -1,0 +1,6 @@
+name: PirateChestToken
+version: 1.0.0
+main: ru.example.piratechesttoken.PirateChestTokenPlugin
+api-version: '1.21'
+author: PirateChestToken
+description: Pirate shop access token drops from chests.
