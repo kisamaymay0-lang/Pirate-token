@@ -1,0 +1,20 @@
+name: PirateChestToken
+version: 1.1.0
+main: ru.example.piratechesttoken.PirateChestTokenPlugin
+api-version: '1.21'
+author: PirateChestToken
+description: Токен Пиратского Магазина выпадает из сундуков.
+
+commands:
+  piratechesttoken:
+    description: Управление плагином PirateChestToken
+    aliases: [pctoken, pct]
+    usage: /piratechesttoken reload
+
+permissions:
+  piratechesttoken.admin:
+    description: Перезагрузка конфигурации PirateChestToken
+    default: op
+  piratechesttoken.drop:
+    description: Игрок может найти токен при открытии сундука
+    default: true
