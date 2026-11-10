@@ -32,4 +32,5 @@ jobs:
           name: PirateChestToken test build
           prerelease: true
           make_latest: false
+          overwrite_files: true
           files: target/pirate-chest-token-1.0.0.jar

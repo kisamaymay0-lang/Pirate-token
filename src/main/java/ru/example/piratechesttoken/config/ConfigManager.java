@@ -52,8 +52,12 @@ public final class ConfigManager {
         return Math.max(1, config().getInt("glow-duration-ticks", 30));
     }
 
-    public boolean shouldRemoveChestForOthers() {
-        return config().getBoolean("remove-chest-for-others", true);
+    public int getShakeDurationTicks() {
+        return Math.max(4, config().getInt("shake-duration-ticks", 12));
+    }
+
+    public int getTokenAnimationTicks() {
+        return Math.max(10, config().getInt("token-animation-ticks", 50));
     }
 
     public String getTokenName() {

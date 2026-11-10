@@ -4,7 +4,12 @@ debug: false
 title-enabled: true
 sound-enabled: true
 particle-enabled: true
+# Radius around the chest in which bystanders see the shake/glow effects.
 glow-radius: 30
+# Duration of the glow around the chest, in ticks.
 glow-duration-ticks: 30
-remove-chest-for-others: true
+# Client-side chest wobble before the real inventory opens.
+shake-duration-ticks: 12
+# Floating token text animation duration, in ticks.
+token-animation-ticks: 50
 token-name: "🏴‍☠️ Pirate Shop Access"
