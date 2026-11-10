@@ -4,7 +4,6 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import org.bukkit.Bukkit;
-import org.bukkit.Color;
 import org.bukkit.Location;
 import org.bukkit.Particle;
 import org.bukkit.Sound;
@@ -66,7 +65,6 @@ public final class TokenVisuals {
         }
 
         display.setText(config.getTokenName() + "\nТокен Пиратского Магазина!");
-        display.setTextColor(Color.fromRGB(255, 220, 90));
         display.setTextOpacity((byte) 0xFF);
         display.setLineWidth(300);
         display.setAlignment(TextDisplay.TextAlignment.CENTER);

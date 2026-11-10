@@ -221,7 +221,7 @@ public final class ChestOpenListener implements Listener {
 
                 shakeChestForViewers(shakeTicks);
                 if (config.isParticleEnabled() && shakeTicks % 3 == 0) {
-                    BlockData data = chestBlocks.getFirst().getBlock().getBlockData();
+                    BlockData data = chestBlocks.getFirst().getBlockData();
                     center.getWorld().spawnParticle(
                             Particle.BLOCK, center, 5, 0.32D, 0.12D, 0.32D, 0.0D, data);
                 }
