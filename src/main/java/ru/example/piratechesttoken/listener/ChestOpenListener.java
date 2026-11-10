@@ -62,17 +62,16 @@ public final class ChestOpenListener implements Listener {
             return;
         }
 
-        AnimationSequence reopeningSequence = reopening.remove(player.getUniqueId());
+        AnimationSequence reopeningSequence = reopening.get(player.getUniqueId());
         if (reopeningSequence != null) {
             if (event.isCancelled()) {
+                reopening.remove(player.getUniqueId(), reopeningSequence);
                 reopeningSequence.abort();
                 return;
             }
-            if (event.getInventory() == reopeningSequence.inventory) {
-                reopeningSequence.onReopenAllowed();
-                return;
-            }
-            reopeningSequence.abort();
+            reopening.remove(player.getUniqueId(), reopeningSequence);
+            reopeningSequence.onReopenAllowed();
+            return;
         }
 
         if (event.isCancelled()) {
@@ -109,7 +108,8 @@ public final class ChestOpenListener implements Listener {
     @EventHandler
     public void onInventoryClose(InventoryCloseEvent event) {
         AnimationSequence sequence = activeByOwner.get(event.getPlayer().getUniqueId());
-        if (sequence == null || sequence.finishing || event.getInventory() != sequence.inventory) {
+        if (sequence == null || sequence.finishing
+                || !sequence.matchesChestInventory(event.getInventory())) {
             return;
         }
         sequence.abort();
@@ -288,7 +288,7 @@ public final class ChestOpenListener implements Listener {
         private void onReopenAllowed() {
             task = Bukkit.getScheduler().runTask(plugin, () -> {
                 if (!owner.isOnline()
-                        || owner.getOpenInventory().getTopInventory() != inventory
+                        || !matchesChestInventory(owner.getOpenInventory().getTopInventory())
                         || !hasChestBlock()) {
                     abort();
                     return;
@@ -301,6 +301,11 @@ public final class ChestOpenListener implements Listener {
             if (!owner.isOnline() || !hasChestBlock()) {
                 abort();
                 return;
+            }
+            if (config.isDebug()) {
+                plugin.getLogger().info("Starting token text animation for " + owner.getName()
+                        + " at " + center.getBlockX() + ", " + center.getBlockY() + ", "
+                        + center.getBlockZ() + ".");
             }
             tokenVisuals.playOwnerReward(owner);
             tokenDisplay = tokenVisuals.createTokenDisplay(center);
@@ -333,7 +338,7 @@ public final class ChestOpenListener implements Listener {
             }
             finishing = true;
             for (Player viewer : Bukkit.getOnlinePlayers()) {
-                if (viewer.getOpenInventory().getTopInventory() == inventory) {
+                if (matchesChestInventory(viewer.getOpenInventory().getTopInventory())) {
                     viewer.closeInventory();
                 }
             }
@@ -376,6 +381,11 @@ public final class ChestOpenListener implements Listener {
             cleanupAndUnlock();
         }
 
+        private boolean matchesChestInventory(Inventory candidate) {
+            List<Block> candidateBlocks = findChestBlocks(candidate.getHolder());
+            return !candidateBlocks.isEmpty() && chestKey.equals(keyFor(candidateBlocks));
+        }
+
         private boolean hasChestBlock() {
             return chestBlocks.stream().anyMatch(block -> isChest(block.getType()));
         }
@@ -403,7 +413,8 @@ public final class ChestOpenListener implements Listener {
                 task.cancel();
                 task = null;
             }
-            if (owner.isOnline() && owner.getOpenInventory().getTopInventory() == inventory) {
+            if (owner.isOnline()
+                    && matchesChestInventory(owner.getOpenInventory().getTopInventory())) {
                 owner.closeInventory();
             }
             cleanupAndUnlock();
