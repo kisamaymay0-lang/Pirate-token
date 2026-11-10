@@ -17,14 +17,11 @@ import org.bukkit.World;
 import org.bukkit.block.Block;
 import org.bukkit.block.Chest;
 import org.bukkit.block.DoubleChest;
-import org.bukkit.block.data.BlockData;
-import org.bukkit.block.data.Directional;
-import org.bukkit.block.BlockFace;
-import org.bukkit.entity.BlockDisplay;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.EntityType;
 import org.bukkit.entity.HumanEntity;
 import org.bukkit.entity.Player;
+import org.bukkit.entity.StorageMinecart;
 import org.bukkit.entity.TextDisplay;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
@@ -36,9 +33,7 @@ import org.bukkit.inventory.InventoryHolder;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.scheduler.BukkitTask;
-import org.bukkit.util.Transformation;
-import org.joml.Quaternionf;
-import org.joml.Vector3f;
+import org.bukkit.util.Vector;
 import ru.example.piratechesttoken.config.ConfigManager;
 import ru.example.piratechesttoken.util.TokenVisuals;
 
@@ -56,7 +51,7 @@ public final class ChestOpenListener implements Listener {
         this.tokenVisuals = tokenVisuals;
     }
 
-    /** On a winning roll, cancel the normal open and run the entity transformation sequence. */
+    /** A winning roll cancels the normal open and runs the chest-entity animation. */
     @EventHandler(priority = EventPriority.HIGHEST)
     public void onInventoryOpen(InventoryOpenEvent event) {
         HumanEntity human = event.getPlayer();
@@ -119,10 +114,9 @@ public final class ChestOpenListener implements Listener {
 
     private void addChestBlock(Chest chest, Map<String, Block> uniqueBlocks) {
         Block block = chest.getBlock();
-        if (!isChest(block.getType())) {
-            return;
+        if (isChest(block.getType())) {
+            uniqueBlocks.putIfAbsent(blockKey(block), block);
         }
-        uniqueBlocks.putIfAbsent(blockKey(block), block);
     }
 
     private boolean isChest(Material type) {
@@ -163,8 +157,8 @@ public final class ChestOpenListener implements Listener {
         private final String chestKey;
         private final Location center;
         private final List<Player> viewers;
-        private final List<BlockDisplay> chestDisplays = new ArrayList<>();
-        private final List<Location> displayOrigins = new ArrayList<>();
+        private final List<StorageMinecart> chestEntities = new ArrayList<>();
+        private final List<Location> entityOrigins = new ArrayList<>();
 
         private BukkitTask task;
         private TextDisplay tokenDisplay;
@@ -195,15 +189,14 @@ public final class ChestOpenListener implements Listener {
                 return;
             }
 
-            createChestLikeDisplayEntities();
-            if (chestDisplays.isEmpty()) {
+            spawnChestMinecartEntity();
+            if (chestEntities.isEmpty()) {
                 abort();
                 return;
             }
 
-            // A chest is a block entity, not a normal renderable block model. Hide the real
-            // chest only for viewers of this effect and show a small vanilla display-entity
-            // approximation (oak body, lid and gold lock) in its place.
+            // CHEST_MINECART uses Minecraft's native chest renderer and chest texture.
+            // The real block is hidden only for animation viewers, then actually removed.
             for (Block block : chestBlocks) {
                 for (Player viewer : viewers) {
                     if (viewer.isOnline() && viewer.getWorld().equals(block.getWorld())) {
@@ -227,7 +220,7 @@ public final class ChestOpenListener implements Listener {
                     return;
                 }
 
-                moveChestDisplays(shakeTicks);
+                shakeChestEntity(shakeTicks);
                 if (config.isParticleEnabled() && shakeTicks % 2 == 0) {
                     center.getWorld().spawnParticle(Particle.BLOCK, center, 7,
                             0.35D, 0.22D, 0.35D, 0.04D,
@@ -241,92 +234,47 @@ public final class ChestOpenListener implements Listener {
             }, 1L, 1L);
         }
 
-        private void createChestLikeDisplayEntities() {
-            for (Block block : chestBlocks) {
-                if (!isChest(block.getType())) {
-                    continue;
-                }
-                spawnDisplayPart(block, Material.OAK_PLANKS,
-                        new Vector3f(0.05F, 0.06F, 0.06F),
-                        new Vector3f(0.90F, 0.60F, 0.88F));
-                spawnDisplayPart(block, Material.OAK_PLANKS,
-                        new Vector3f(0.02F, 0.69F, 0.04F),
-                        new Vector3f(0.96F, 0.25F, 0.92F));
-                spawnDisplayLock(block);
-            }
-        }
-
-        private void spawnDisplayPart(Block source, Material material,
-                                      Vector3f translation, Vector3f scale) {
-            Entity entity = source.getWorld().spawnEntity(
-                    source.getLocation(), EntityType.BLOCK_DISPLAY);
-            if (!(entity instanceof BlockDisplay display)) {
-                entity.remove();
+        private void spawnChestMinecartEntity() {
+            Block firstBlock = chestBlocks.getFirst();
+            Location entityLocation = center.clone();
+            // Minecart entity coordinates sit near the rail/floor level; keeping the cart
+            // low lets the native chest model occupy approximately the original block space.
+            entityLocation.setY(firstBlock.getY() + 0.0625D);
+            Entity spawned = center.getWorld().spawnEntity(entityLocation, EntityType.CHEST_MINECART);
+            if (!(spawned instanceof StorageMinecart minecart)) {
+                spawned.remove();
                 return;
             }
-            display.setBlock(material.createBlockData());
-            display.setTransformation(new Transformation(
-                    translation, new Quaternionf(), scale, new Quaternionf()));
-            display.setGravity(false);
-            display.setInvulnerable(true);
-            display.setPersistent(false);
-            showDisplayOnlyToViewers(display);
-            chestDisplays.add(display);
-            displayOrigins.add(display.getLocation().clone());
-        }
 
-        private void spawnDisplayLock(Block source) {
-            BlockFace facing = BlockFace.NORTH;
-            BlockData sourceData = source.getBlockData();
-            if (sourceData instanceof Directional directional) {
-                facing = directional.getFacing();
-            }
-
-            Vector3f translation;
-            Vector3f scale;
-            switch (facing) {
-                case SOUTH -> {
-                    translation = new Vector3f(0.44F, 0.38F, 0.94F);
-                    scale = new Vector3f(0.12F, 0.16F, 0.08F);
-                }
-                case EAST -> {
-                    translation = new Vector3f(0.94F, 0.38F, 0.44F);
-                    scale = new Vector3f(0.08F, 0.16F, 0.12F);
-                }
-                case WEST -> {
-                    translation = new Vector3f(-0.02F, 0.38F, 0.44F);
-                    scale = new Vector3f(0.08F, 0.16F, 0.12F);
-                }
-                default -> {
-                    translation = new Vector3f(0.44F, 0.38F, -0.02F);
-                    scale = new Vector3f(0.12F, 0.16F, 0.08F);
-                }
-            }
-            spawnDisplayPart(source, Material.GOLD_BLOCK, translation, scale);
-        }
-
-        private void showDisplayOnlyToViewers(BlockDisplay display) {
+            minecart.setGravity(false);
+            minecart.setVelocity(new Vector(0.0D, 0.0D, 0.0D));
+            minecart.setInvulnerable(true);
+            minecart.setSilent(true);
+            minecart.setPersistent(false);
             for (Player player : Bukkit.getOnlinePlayers()) {
-                player.hideEntity(plugin, display);
+                player.hideEntity(plugin, minecart);
             }
             for (Player viewer : viewers) {
                 if (viewer.isOnline()) {
-                    viewer.showEntity(plugin, display);
+                    viewer.showEntity(plugin, minecart);
                 }
             }
+            chestEntities.add(minecart);
+            entityOrigins.add(minecart.getLocation().clone());
         }
 
-        private void moveChestDisplays(int tick) {
+        private void shakeChestEntity(int tick) {
             double side = tick % 2 == 0 ? 0.045D : -0.045D;
             double forward = tick % 4 < 2 ? -0.035D : 0.035D;
             double lift = tick % 3 == 0 ? 0.025D : 0.0D;
-            for (int index = 0; index < chestDisplays.size(); index++) {
-                BlockDisplay display = chestDisplays.get(index);
-                if (display.isDead()) {
+            for (int index = 0; index < chestEntities.size(); index++) {
+                StorageMinecart chestEntity = chestEntities.get(index);
+                if (chestEntity.isDead()) {
                     continue;
                 }
-                Location moved = displayOrigins.get(index).clone().add(side, lift, forward);
-                display.teleport(moved);
+                Location moved = entityOrigins.get(index).clone().add(side, lift, forward);
+                chestEntity.teleport(moved);
+                chestEntity.setVelocity(new Vector(0.0D, 0.0D, 0.0D));
             }
         }
 
@@ -336,17 +284,12 @@ public final class ChestOpenListener implements Listener {
                 return;
             }
 
-            for (Block block : chestBlocks) {
-                if (isChest(block.getType())) {
-                    center.getWorld().spawnParticle(Particle.BLOCK,
-                            block.getLocation().add(0.5D, 0.5D, 0.5D),
-                            24, 0.32D, 0.32D, 0.32D, 0.06D,
-                            Material.OAK_PLANKS.createBlockData());
-                }
-            }
+            center.getWorld().spawnParticle(Particle.BLOCK, center, 24,
+                    0.32D, 0.32D, 0.32D, 0.06D,
+                    Material.OAK_PLANKS.createBlockData());
             center.getWorld().spawnParticle(Particle.POOF, center, 16,
                     0.35D, 0.45D, 0.35D, 0.08D);
-            removeChestDisplays();
+            removeChestEntities();
             breakChestAndDropContents();
             chestDestroyed = true;
             startTokenAnimation();
@@ -440,14 +383,14 @@ public final class ChestOpenListener implements Listener {
             }
         }
 
-        private void removeChestDisplays() {
-            for (BlockDisplay display : chestDisplays) {
-                if (!display.isDead()) {
-                    display.remove();
+        private void removeChestEntities() {
+            for (StorageMinecart entity : chestEntities) {
+                if (!entity.isDead()) {
+                    entity.remove();
                 }
             }
-            chestDisplays.clear();
-            displayOrigins.clear();
+            chestEntities.clear();
+            entityOrigins.clear();
         }
 
         private void abort() {
@@ -467,7 +410,7 @@ public final class ChestOpenListener implements Listener {
                 task.cancel();
                 task = null;
             }
-            removeChestDisplays();
+            removeChestEntities();
             if (tokenDisplay != null && !tokenDisplay.isDead()) {
                 tokenDisplay.remove();
                 tokenDisplay = null;
