@@ -1,15 +1,46 @@
-# Probability per chest inventory opening. 0.001 = 0.1%.
+# ============ PirateChestToken ============
+# Токен Пиратского Магазина с шансом выпадает при открытии сундука:
+# сундук трясётся, открывается, над ним взлетает светящийся токен с частицами.
+
+# Шанс находки токена при каждом открытии сундука. 0.001 = 0.1%, 1.0 = 100%.
 drop-chance: 0.001
-debug: false
+
+# Миры, где работает ивент ('*' — все миры).
+enabled-worlds: ['*']
+
+# Тряска сундука перед находкой, в тиках (20 тиков = 1 секунда).
+shake-duration-ticks: 12
+# Сколько токен парит над сундуком, в тиках.
+token-animation-ticks: 50
+# Радиус в блоках, в котором зрители видят свечение и частицы.
+glow-radius: 30
+# Длительность свечения над сундуком, в тиках.
+glow-duration-ticks: 30
+
+# Эффекты находки.
 title-enabled: true
 sound-enabled: true
 particle-enabled: true
-# Radius around the chest in which bystanders see the shake/glow effects.
-glow-radius: 30
-# Duration of the glow around the chest, in ticks.
-glow-duration-ticks: 30
-# Client-side chest wobble before the real inventory opens.
-shake-duration-ticks: 12
-# Floating token text animation duration, in ticks.
-token-animation-ticks: 50
-token-name: "🏴‍☠️ Pirate Shop Access"
+
+# Настоящий предмет-награда, который получает игрок.
+reward:
+  enabled: true
+  material: GOLD_NUGGET
+  name: '&6&l🏴‍☠️ Токен Пиратского Магазина'
+  lore:
+    - '&7Редкая находка из пиратского сундука.'
+    - '&7Храните его как трофей.'
+  glow: true
+
+# Сломать сундук после анимации и выбросить его содержимое на землю.
+# По умолчанию false: сундук и его предметы остаются целы.
+destroy-chest-on-find: false
+
+# Тексты находки. Работают &-коды цвета.
+token-name: '&6&l🏴‍☠️ Токен Пиратского Магазина'
+messages:
+  subtitle: '&eТокен Пиратского Магазина найден!'
+  actionbar: '&eВы нашли токен Пиратского Магазина!'
+
+# Подробный лог в консоль.
+debug: false

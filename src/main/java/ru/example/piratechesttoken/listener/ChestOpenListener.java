@@ -15,11 +15,12 @@ import org.bukkit.Particle;
 import org.bukkit.Sound;
 import org.bukkit.World;
 import org.bukkit.block.Block;
+import org.bukkit.block.BlockFace;
 import org.bukkit.block.Chest;
 import org.bukkit.block.DoubleChest;
 import org.bukkit.block.data.BlockData;
 import org.bukkit.block.data.Directional;
-import org.bukkit.block.BlockFace;
+import org.bukkit.entity.ArmorStand;
 import org.bukkit.entity.HumanEntity;
 import org.bukkit.entity.Player;
 import org.bukkit.entity.TextDisplay;
@@ -35,8 +36,15 @@ import org.bukkit.inventory.ItemStack;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.scheduler.BukkitTask;
 import ru.example.piratechesttoken.config.ConfigManager;
+import ru.example.piratechesttoken.util.ChanceRoller;
+import ru.example.piratechesttoken.util.TokenReward;
 import ru.example.piratechesttoken.util.TokenVisuals;
 
+/**
+ * Механика находки: при открытии сундука с нужным шансом сундук трясётся,
+ * открывается по-настоящему, над ним взлетает светящийся токен, а игрок
+ * получает предмет-награду. Сундук по умолчанию остаётся целым.
+ */
 public final class ChestOpenListener implements Listener {
 
     private static final List<BlockFace> FACES = List.of(
@@ -45,14 +53,27 @@ public final class ChestOpenListener implements Listener {
     private final JavaPlugin plugin;
     private final ConfigManager config;
     private final TokenVisuals tokenVisuals;
+    private final TokenReward tokenReward;
     private final Map<String, AnimationSequence> activeByChest = new HashMap<>();
     private final Map<UUID, AnimationSequence> activeByOwner = new HashMap<>();
     private final Map<UUID, AnimationSequence> reopening = new HashMap<>();
 
-    public ChestOpenListener(JavaPlugin plugin, ConfigManager config, TokenVisuals tokenVisuals) {
+    public ChestOpenListener(JavaPlugin plugin, ConfigManager config,
+                             TokenVisuals tokenVisuals, TokenReward tokenReward) {
         this.plugin = plugin;
         this.config = config;
         this.tokenVisuals = tokenVisuals;
+        this.tokenReward = tokenReward;
+    }
+
+    /** Отменить все анимации и вернуть блоки в исходное состояние (выключение плагина). */
+    public void shutdown() {
+        for (AnimationSequence sequence : new ArrayList<>(activeByOwner.values())) {
+            sequence.abort();
+        }
+        activeByOwner.clear();
+        activeByChest.clear();
+        reopening.clear();
     }
 
     @EventHandler(priority = EventPriority.HIGHEST)
@@ -77,8 +98,21 @@ public final class ChestOpenListener implements Listener {
         if (event.isCancelled()) {
             return;
         }
+
+        AnimationSequence active = activeByOwner.get(player.getUniqueId());
+        if (active != null) {
+            // Игрок во время анимации открыл другой сундук — старая анимация отменяется.
+            active.abort();
+        }
+
         List<Block> chestBlocks = findChestBlocks(event.getInventory().getHolder());
         if (chestBlocks.isEmpty()) {
+            return;
+        }
+        if (!config.isWorldEnabled(chestBlocks.getFirst().getWorld().getName())) {
+            return;
+        }
+        if (!player.hasPermission("piratechesttoken.drop")) {
             return;
         }
 
@@ -89,9 +123,9 @@ public final class ChestOpenListener implements Listener {
         }
 
         double chance = config.getDropChance();
-        if (ThreadLocalRandom.current().nextDouble() >= chance) {
+        if (!ChanceRoller.roll(ThreadLocalRandom.current(), chance)) {
             if (config.isDebug()) {
-                plugin.getLogger().info("No token animation for " + player.getName()
+                plugin.getLogger().info("No token for " + player.getName()
                         + " (chance=" + chance + ").");
             }
             return;
@@ -102,6 +136,8 @@ public final class ChestOpenListener implements Listener {
                 player, event.getInventory(), chestBlocks, chestKey);
         activeByChest.put(chestKey, sequence);
         activeByOwner.put(player.getUniqueId(), sequence);
+        // Награду выдаём сразу: она остаётся у игрока, даже если анимацию прервут.
+        tokenReward.give(player);
         sequence.startShake();
     }
 
@@ -147,7 +183,7 @@ public final class ChestOpenListener implements Listener {
         }
     }
 
-    private boolean isChest(Material type) {
+    private static boolean isChest(Material type) {
         return type == Material.CHEST || type == Material.TRAPPED_CHEST;
     }
 
@@ -185,10 +221,13 @@ public final class ChestOpenListener implements Listener {
         private final String chestKey;
         private final Location center;
         private final List<Player> viewers;
+        /** Тряска подменой facing возможна только для одиночного сундука:
+         *  у двойного половины при повороте визуально рассыпаются. */
+        private final boolean canShakeBlocks;
 
         private BukkitTask task;
         private TextDisplay tokenDisplay;
-        private org.bukkit.entity.ArmorStand glowStand;
+        private ArmorStand glowStand;
         private int shakeTicks;
         private int tokenTicks;
         private boolean finishing;
@@ -200,6 +239,7 @@ public final class ChestOpenListener implements Listener {
             this.chestBlocks = List.copyOf(chestBlocks);
             this.chestKey = chestKey;
             this.center = centerOf(chestBlocks);
+            this.canShakeBlocks = chestBlocks.size() == 1;
             List<Player> nearby = new ArrayList<>(tokenVisuals.getPlayersInRadius(
                     center, config.getGlowRadius()));
             if (!nearby.contains(owner)) {
@@ -229,7 +269,9 @@ public final class ChestOpenListener implements Listener {
                     return;
                 }
 
-                shakeChestForViewers(shakeTicks);
+                if (canShakeBlocks) {
+                    shakeChestForViewers(shakeTicks);
+                }
                 if (config.isParticleEnabled() && shakeTicks % 2 == 0) {
                     center.getWorld().spawnParticle(Particle.BLOCK, center, 6,
                             0.30D, 0.15D, 0.30D, 0.02D,
@@ -303,7 +345,7 @@ public final class ChestOpenListener implements Listener {
                 return;
             }
             if (config.isDebug()) {
-                plugin.getLogger().info("Starting token text animation for " + owner.getName()
+                plugin.getLogger().info("Starting token animation for " + owner.getName()
                         + " at " + center.getBlockX() + ", " + center.getBlockY() + ", "
                         + center.getBlockZ() + ".");
             }
@@ -319,7 +361,7 @@ public final class ChestOpenListener implements Listener {
                 if (tokenTicks >= config.getTokenAnimationTicks()) {
                     task.cancel();
                     task = null;
-                    finishAndBreakChest();
+                    finish();
                     return;
                 }
                 if (tokenTicks >= config.getGlowDurationTicks() && glowStand != null) {
@@ -331,11 +373,7 @@ public final class ChestOpenListener implements Listener {
             }, 1L, 1L);
         }
 
-        private void finishAndBreakChest() {
-            if (!hasChestBlock()) {
-                cleanupAndUnlock();
-                return;
-            }
+        private void finish() {
             finishing = true;
             for (Player viewer : Bukkit.getOnlinePlayers()) {
                 if (matchesChestInventory(viewer.getOpenInventory().getTopInventory())) {
@@ -343,6 +381,20 @@ public final class ChestOpenListener implements Listener {
                 }
             }
 
+            if (config.isDestroyChestOnFind()) {
+                destroyChestAndDrop();
+            } else {
+                center.getWorld().playSound(center, Sound.ENTITY_PLAYER_LEVELUP, 0.6F, 1.2F);
+            }
+            center.getWorld().spawnParticle(Particle.POOF, center, 12,
+                    0.3D, 0.35D, 0.3D, 0.04D);
+            cleanupAndUnlock();
+        }
+
+        private void destroyChestAndDrop() {
+            if (!hasChestBlock()) {
+                return;
+            }
             List<ItemStack> contents = new ArrayList<>();
             for (ItemStack stack : inventory.getStorageContents()) {
                 if (stack != null && !stack.getType().isAir()) {
@@ -351,34 +403,29 @@ public final class ChestOpenListener implements Listener {
             }
             inventory.clear();
 
-            Material chestDrop = Material.CHEST;
             boolean removedAnyBlock = false;
             for (Block block : chestBlocks) {
                 Material type = block.getType();
                 if (!isChest(type)) {
                     continue;
                 }
-                if (!removedAnyBlock) {
-                    chestDrop = type;
-                }
                 BlockData oldData = block.getBlockData();
                 block.setType(Material.AIR, false);
                 center.getWorld().spawnParticle(Particle.BLOCK,
                         block.getLocation().add(0.5D, 0.5D, 0.5D),
                         16, 0.25D, 0.25D, 0.25D, 0.05D, oldData);
+                // Каждый блок двойного сундука роняет свой предмет.
+                center.getWorld().dropItemNaturally(block.getLocation().add(0.5D, 0.5D, 0.5D),
+                        new ItemStack(type));
                 removedAnyBlock = true;
             }
 
             if (removedAnyBlock) {
                 center.getWorld().playSound(center, Sound.BLOCK_WOOD_BREAK, 1.0F, 1.0F);
-                center.getWorld().dropItemNaturally(center, new ItemStack(chestDrop));
                 for (ItemStack stack : contents) {
                     center.getWorld().dropItemNaturally(center, stack);
                 }
             }
-            center.getWorld().spawnParticle(Particle.POOF, center, 12,
-                    0.3D, 0.35D, 0.3D, 0.04D);
-            cleanupAndUnlock();
         }
 
         private boolean matchesChestInventory(Inventory candidate) {
@@ -427,12 +474,12 @@ public final class ChestOpenListener implements Listener {
             }
             if (tokenDisplay != null && !tokenDisplay.isDead()) {
                 tokenDisplay.remove();
-                tokenDisplay = null;
             }
+            tokenDisplay = null;
             if (glowStand != null && !glowStand.isDead()) {
                 glowStand.remove();
-                glowStand = null;
             }
+            glowStand = null;
             reopening.remove(owner.getUniqueId(), this);
             restoreChestForViewers();
             activeByOwner.remove(owner.getUniqueId(), this);

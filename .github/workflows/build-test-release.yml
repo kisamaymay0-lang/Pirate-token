@@ -1,9 +1,10 @@
 name: Build test plugin release
 
 on:
+  workflow_dispatch:
   push:
     branches:
-      - arena/3a754546-pirate-token
+      - arena/5691e5c4-pirate-token
 
 permissions:
   contents: write
@@ -45,4 +46,4 @@ jobs:
           prerelease: true
           make_latest: false
           overwrite_files: true
-          files: target/pirate-chest-token-1.0.0.jar
+          files: target/pirate-chest-token-*.jar
